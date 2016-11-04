@@ -12,6 +12,7 @@ namespace PhpDocblockChecker;
 use DirectoryIterator;
 use PHP_Token_Stream;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -53,6 +54,11 @@ class CheckerCommand extends Command
     protected $skipMethods = false;
 
     /**
+     * @var array
+     */
+    protected $filesPath = array();
+
+    /**
      * @var OutputInterface
      */
     protected $output;
@@ -66,11 +72,12 @@ class CheckerCommand extends Command
             ->setName('check')
             ->setDescription('Check PHP files within a directory for appropriate use of Docblocks.')
             ->addOption('exclude', 'x', InputOption::VALUE_REQUIRED, 'Files and directories to exclude.', null)
-            ->addOption('directory', 'd', InputOption::VALUE_REQUIRED, 'Directory to scan.', './')
+            ->addOption('directory', 'd', InputOption::VALUE_REQUIRED, 'Directory to scan.')
             ->addOption('skip-classes', null, InputOption::VALUE_NONE, 'Don\'t check classes for docblocks.')
             ->addOption('skip-methods', null, InputOption::VALUE_NONE, 'Don\'t check methods for docblocks.')
             ->addOption('skip-anonymous-functions', null, InputOption::VALUE_NONE, 'Don\'t check anonymous functions for docblocks.')
-            ->addOption('json', 'j', InputOption::VALUE_NONE, 'Output JSON instead of a log.');
+            ->addOption('json', 'j', InputOption::VALUE_NONE, 'Output JSON instead of a log.')
+            ->addArgument('files', InputArgument::IS_ARRAY, 'Files to scan.');
     }
 
     /**
@@ -85,6 +92,7 @@ class CheckerCommand extends Command
         $exclude = $input->getOption('exclude');
         $json = $input->getOption('json');
         $this->basePath = $input->getOption('directory');
+        $this->filesPath = $input->getArgument('files');
         $this->verbose = !$json;
         $this->output = $output;
         $this->skipClasses = $input->getOption('skip-classes');
@@ -97,12 +105,18 @@ class CheckerCommand extends Command
         }
 
         // Check base path ends with a slash:
-        if (substr($this->basePath, -1) != '/') {
+        if (!empty($this->basePath) && substr($this->basePath, -1) != '/') {
             $this->basePath .= '/';
         }
 
         // Process:
-        $this->processDirectory();
+        if (!empty($this->basePath)) {
+            $this->processDirectory();
+        }
+
+        if (!empty($this->filesPath)) {
+            $this->processFiles();
+        }
 
         // Output JSON if requested:
         if ($json) {
@@ -110,6 +124,16 @@ class CheckerCommand extends Command
         }
 
         return count($this->report) ? 1 : 0;
+    }
+
+    /**
+     * Iterate through files from argument
+     */
+    protected function processFiles()
+    {
+        foreach($this->filesPath as $filePath) {
+            $this->processFile($filePath);
+        }
     }
 
     /**
@@ -149,7 +173,7 @@ class CheckerCommand extends Command
     {
         $stream = new PHP_Token_Stream($this->basePath . $file);
 
-        foreach($stream->getClasses() as $name => $class) {
+        foreach ($stream->getClasses() as $name => $class) {
             $errors = false;
 
             if (!$this->skipClasses && is_null($class['docblock'])) {
@@ -190,7 +214,7 @@ class CheckerCommand extends Command
                         );
 
                         if ($this->verbose) {
-                            $message = $class['file'] . ': ' . $method['startLine'] . ' - Method '.$name.'::'.$methodName.' is missing a docblock.';
+                            $message = $class['file'] . ': ' . $method['startLine'] . ' - Method ' . $name . '::' . $methodName . ' is missing a docblock.';
                             $this->output->writeln('<error>' . $message . '</error>');
                         }
                     }
